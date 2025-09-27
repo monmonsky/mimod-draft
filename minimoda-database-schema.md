@@ -121,11 +121,13 @@ CREATE TABLE users (
     email VARCHAR(255) UNIQUE NOT NULL,
     phone VARCHAR(20),
     password VARCHAR(255) NOT NULL,
-    role VARCHAR(20) DEFAULT 'customer' CHECK (role IN ('customer', 'admin', 'super_admin')),
     email_verified_at TIMESTAMP,
     phone_verified_at TIMESTAMP,
     last_login_at TIMESTAMP,
+    last_login_ip INET,
     status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'suspended', 'deleted')),
+    two_factor_enabled BOOLEAN DEFAULT false,
+    two_factor_secret VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -133,9 +135,9 @@ CREATE TABLE users (
 
 **Purpose:** Store all users (customers and admins)  
 **Key Fields:**
-- `role`: Determines access level
 - `status`: Account status management
 - `email_verified_at`: Email verification tracking
+- `two_factor_enabled`: 2FA support
 
 #### 3.2 customer_addresses
 ```sql
@@ -166,9 +168,195 @@ CREATE TABLE customer_addresses (
 - `coordinates`: For map integration
 - `is_default`: Default shipping address
 
+### ROLE & PERMISSION TABLES (RBAC)
+
+#### 3.3 roles
+```sql
+CREATE TABLE roles (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(100) UNIQUE NOT NULL, -- 'super_admin', 'admin', 'staff', 'customer'
+    display_name VARCHAR(100) NOT NULL,
+    description TEXT,
+    is_active BOOLEAN DEFAULT true,
+    is_system BOOLEAN DEFAULT false, -- System roles can't be deleted
+    priority INTEGER DEFAULT 0, -- Higher priority = more important role
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+**Purpose:** Define system roles  
+**Key Fields:**
+- `is_system`: Protect default roles from deletion
+- `priority`: Role hierarchy for conflict resolution
+
+#### 3.4 permissions
+```sql
+CREATE TABLE permissions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(100) UNIQUE NOT NULL, -- 'product.create', 'order.view'
+    display_name VARCHAR(100) NOT NULL,
+    description TEXT,
+    module VARCHAR(50) NOT NULL, -- 'product', 'order', 'user'
+    action VARCHAR(50) NOT NULL, -- 'create', 'read', 'update', 'delete'
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+**Purpose:** Define granular permissions  
+**Key Fields:**
+- `name`: Dot notation for permission (module.action)
+- `module`: Group permissions by module
+- `action`: CRUD actions
+
+#### 3.5 modules
+```sql
+CREATE TABLE modules (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(100) UNIQUE NOT NULL, -- 'product_management', 'order_management'
+    display_name VARCHAR(100) NOT NULL,
+    description TEXT,
+    icon VARCHAR(100), -- Icon class for UI
+    parent_id UUID REFERENCES modules(id) ON DELETE CASCADE, -- For sub-modules
+    route VARCHAR(255), -- Route/URL for the module
+    component VARCHAR(255), -- Frontend component name
+    sort_order INTEGER DEFAULT 0,
+    is_active BOOLEAN DEFAULT true,
+    is_visible BOOLEAN DEFAULT true, -- Show in menu
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+**Purpose:** Define system modules/menus  
+**Key Fields:**
+- `parent_id`: Hierarchical menu structure
+- `route`: URL/route for navigation
+- `is_visible`: Control menu visibility
+
+#### 3.6 user_roles (Junction Table)
+```sql
+CREATE TABLE user_roles (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+    assigned_by UUID REFERENCES users(id),
+    assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP, -- Optional: temporary roles
+    is_active BOOLEAN DEFAULT true,
+    UNIQUE(user_id, role_id)
+);
+```
+
+**Purpose:** Assign roles to users (many-to-many)  
+**Key Fields:**
+- `assigned_by`: Audit trail
+- `expires_at`: Temporary role assignments
+
+#### 3.7 role_permissions (Junction Table)
+```sql
+CREATE TABLE role_permissions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+    permission_id UUID NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
+    granted_by UUID REFERENCES users(id),
+    granted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(role_id, permission_id)
+);
+```
+
+**Purpose:** Assign permissions to roles
+
+#### 3.8 role_modules (Junction Table)
+```sql
+CREATE TABLE role_modules (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+    module_id UUID NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
+    can_view BOOLEAN DEFAULT true,
+    can_create BOOLEAN DEFAULT false,
+    can_update BOOLEAN DEFAULT false,
+    can_delete BOOLEAN DEFAULT false,
+    can_export BOOLEAN DEFAULT false,
+    custom_permissions JSONB, -- Additional module-specific permissions
+    granted_by UUID REFERENCES users(id),
+    granted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(role_id, module_id)
+);
+```
+
+**Purpose:** Control module access per role  
+**Key Fields:**
+- CRUD permissions per module
+- `custom_permissions`: Flexible additional permissions
+
+#### 3.9 user_permissions (Direct Permissions)
+```sql
+CREATE TABLE user_permissions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    permission_id UUID NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
+    granted_by UUID REFERENCES users(id),
+    granted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP, -- Temporary permission
+    is_granted BOOLEAN DEFAULT true, -- true = grant, false = revoke
+    reason TEXT, -- Why this permission was granted/revoked
+    UNIQUE(user_id, permission_id)
+);
+```
+
+**Purpose:** Override permissions for specific users  
+**Key Fields:**
+- `is_granted`: Can grant or explicitly revoke permissions
+- `expires_at`: Temporary permission overrides
+
+#### 3.10 permission_groups
+```sql
+CREATE TABLE permission_groups (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(100) UNIQUE NOT NULL, -- 'product_full', 'order_read_only'
+    display_name VARCHAR(100) NOT NULL,
+    description TEXT,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+**Purpose:** Group related permissions
+
+#### 3.11 permission_group_items (Junction Table)
+```sql
+CREATE TABLE permission_group_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    group_id UUID NOT NULL REFERENCES permission_groups(id) ON DELETE CASCADE,
+    permission_id UUID NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
+    UNIQUE(group_id, permission_id)
+);
+```
+
+**Purpose:** Define which permissions belong to each group
+
+#### 3.12 sessions
+```sql
+CREATE TABLE sessions (
+    id VARCHAR(255) PRIMARY KEY,
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    ip_address INET,
+    user_agent TEXT,
+    payload TEXT,
+    last_activity TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+**Purpose:** Track user sessions for security
+
 ### PRODUCT CATALOG TABLES
 
-#### 3.3 categories
+#### 3.13 categories
 ```sql
 CREATE TABLE categories (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -190,7 +378,7 @@ CREATE TABLE categories (
 - `slug`: SEO-friendly URL
 - `sort_order`: Display ordering
 
-#### 3.4 brands
+#### 3.14 brands
 ```sql
 CREATE TABLE brands (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -206,7 +394,7 @@ CREATE TABLE brands (
 
 **Purpose:** Product brand management
 
-#### 3.5 products
+#### 3.15 products
 ```sql
 CREATE TABLE products (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -233,7 +421,7 @@ CREATE TABLE products (
 - `seo_meta`: JSONB for flexible SEO data
 - `age_min/max`: Age range for kids clothing
 
-#### 3.6 product_categories (Junction Table)
+#### 3.16 product_categories (Junction Table)
 ```sql
 CREATE TABLE product_categories (
     product_id UUID REFERENCES products(id) ON DELETE CASCADE,
@@ -244,7 +432,7 @@ CREATE TABLE product_categories (
 
 **Purpose:** Many-to-many relationship between products and categories
 
-#### 3.7 product_variants
+#### 3.17 product_variants
 ```sql
 CREATE TABLE product_variants (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -269,7 +457,7 @@ CREATE TABLE product_variants (
 - `weight_gram`: For shipping cost calculation
 - `reserved_quantity`: Stock in active carts
 
-#### 3.8 product_images
+#### 3.18 product_images
 ```sql
 CREATE TABLE product_images (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -286,7 +474,7 @@ CREATE TABLE product_images (
 
 ### SHOPPING CART TABLES
 
-#### 3.9 carts
+#### 3.19 carts
 ```sql
 CREATE TABLE carts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -307,7 +495,7 @@ CREATE TABLE carts (
 - `guest_token`: Supports guest checkout
 - `expires_at`: Auto-cleanup old carts
 
-#### 3.10 cart_items
+#### 3.20 cart_items
 ```sql
 CREATE TABLE cart_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -326,7 +514,7 @@ CREATE TABLE cart_items (
 
 ### ORDER TABLES
 
-#### 3.11 orders
+#### 3.21 orders
 ```sql
 CREATE TABLE orders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -372,7 +560,7 @@ CREATE TABLE orders (
 - `shipping_address_json`: Complete address snapshot
 - Dual status tracking (payment & fulfillment)
 
-#### 3.12 order_items
+#### 3.22 order_items
 ```sql
 CREATE TABLE order_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -400,7 +588,7 @@ CREATE TABLE order_items (
 
 ### PAYMENT & SHIPPING TABLES
 
-#### 3.13 payments
+#### 3.23 payments
 ```sql
 CREATE TABLE payments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -423,7 +611,7 @@ CREATE TABLE payments (
 - `raw_payload`: Complete gateway response for debugging
 - `transaction_id`: External payment reference
 
-#### 3.14 payment_logs
+#### 3.24 payment_logs
 ```sql
 CREATE TABLE payment_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -436,7 +624,7 @@ CREATE TABLE payment_logs (
 
 **Purpose:** Payment webhook and event logging
 
-#### 3.15 shipments
+#### 3.25 shipments
 ```sql
 CREATE TABLE shipments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -458,7 +646,7 @@ CREATE TABLE shipments (
 
 ### PROMOTION TABLES
 
-#### 3.16 coupons
+#### 3.26 coupons
 ```sql
 CREATE TABLE coupons (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -486,7 +674,7 @@ CREATE TABLE coupons (
 - Arrays for category/product restrictions
 - Usage limits and tracking
 
-#### 3.17 coupon_usages
+#### 3.27 coupon_usages
 ```sql
 CREATE TABLE coupon_usages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -502,7 +690,7 @@ CREATE TABLE coupon_usages (
 
 ### SYSTEM TABLES
 
-#### 3.18 activity_logs
+#### 3.28 activity_logs
 ```sql
 CREATE TABLE activity_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -520,7 +708,7 @@ CREATE TABLE activity_logs (
 
 **Purpose:** Audit trail for all system activities
 
-#### 3.19 settings
+#### 3.29 settings
 ```sql
 CREATE TABLE settings (
     key VARCHAR(100) PRIMARY KEY,
@@ -536,7 +724,7 @@ CREATE TABLE settings (
 - `payment.midtrans.server_key`: Payment gateway config
 - `email.smtp`: Email configuration
 
-#### 3.20 notifications
+#### 3.30 notifications
 ```sql
 CREATE TABLE notifications (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -559,8 +747,20 @@ CREATE TABLE notifications (
 ### Foreign Key Constraints Summary
 
 ```sql
--- User Relations
+-- User & RBAC Relations
 customer_addresses.user_id → users.id (CASCADE DELETE)
+user_roles.user_id → users.id (CASCADE DELETE)
+user_roles.role_id → roles.id (CASCADE DELETE)
+role_permissions.role_id → roles.id (CASCADE DELETE)
+role_permissions.permission_id → permissions.id (CASCADE DELETE)
+role_modules.role_id → roles.id (CASCADE DELETE)
+role_modules.module_id → modules.id (CASCADE DELETE)
+user_permissions.user_id → users.id (CASCADE DELETE)
+user_permissions.permission_id → permissions.id (CASCADE DELETE)
+permission_group_items.group_id → permission_groups.id (CASCADE DELETE)
+permission_group_items.permission_id → permissions.id (CASCADE DELETE)
+modules.parent_id → modules.id (CASCADE DELETE)
+sessions.user_id → users.id (CASCADE DELETE)
 carts.user_id → users.id (CASCADE DELETE)
 orders.user_id → users.id (SET NULL)
 notifications.user_id → users.id (CASCADE DELETE)
@@ -609,8 +809,22 @@ coupon_usages.order_id → orders.id (RESTRICT)
 ```sql
 -- User & Auth
 CREATE INDEX idx_users_email ON users(email);
-CREATE INDEX idx_users_role ON users(role) WHERE role != 'customer';
+CREATE INDEX idx_users_status ON users(status) WHERE status = 'active';
 CREATE INDEX idx_addresses_user_default ON customer_addresses(user_id) WHERE is_default = true;
+
+-- RBAC Indexes
+CREATE INDEX idx_roles_active ON roles(is_active) WHERE is_active = true;
+CREATE INDEX idx_permissions_module ON permissions(module);
+CREATE INDEX idx_permissions_active ON permissions(is_active) WHERE is_active = true;
+CREATE INDEX idx_modules_parent ON modules(parent_id);
+CREATE INDEX idx_modules_active ON modules(is_active) WHERE is_active = true;
+CREATE INDEX idx_user_roles_user ON user_roles(user_id) WHERE is_active = true;
+CREATE INDEX idx_user_roles_role ON user_roles(role_id) WHERE is_active = true;
+CREATE INDEX idx_role_permissions_role ON role_permissions(role_id);
+CREATE INDEX idx_role_modules_role ON role_modules(role_id);
+CREATE INDEX idx_user_permissions_user ON user_permissions(user_id);
+CREATE INDEX idx_sessions_user ON sessions(user_id);
+CREATE INDEX idx_sessions_last_activity ON sessions(last_activity);
 
 -- Products
 CREATE INDEX idx_products_slug ON products(slug);
@@ -643,6 +857,7 @@ CREATE INDEX idx_products_search ON products
 CREATE INDEX idx_products_seo ON products USING gin(seo_meta);
 CREATE INDEX idx_orders_address ON orders USING gin(shipping_address_json);
 CREATE INDEX idx_payments_payload ON payments USING gin(raw_payload);
+CREATE INDEX idx_role_modules_custom ON role_modules USING gin(custom_permissions);
 ```
 
 ### Composite Indexes
@@ -781,6 +996,83 @@ WHERE
 ORDER BY available ASC, p.name;
 ```
 
+#### 6.7 User Permissions Check
+```sql
+-- Get all permissions for a user (including role-based and direct)
+WITH user_role_permissions AS (
+    -- Permissions from roles
+    SELECT DISTINCT p.* 
+    FROM permissions p
+    JOIN role_permissions rp ON p.id = rp.permission_id
+    JOIN user_roles ur ON rp.role_id = ur.role_id
+    WHERE ur.user_id = $1 AND ur.is_active = true
+        AND (ur.expires_at IS NULL OR ur.expires_at > NOW())
+),
+user_direct_permissions AS (
+    -- Direct permissions
+    SELECT p.*
+    FROM permissions p
+    JOIN user_permissions up ON p.id = up.permission_id
+    WHERE up.user_id = $1 
+        AND up.is_granted = true
+        AND (up.expires_at IS NULL OR up.expires_at > NOW())
+),
+user_revoked_permissions AS (
+    -- Explicitly revoked permissions
+    SELECT permission_id
+    FROM user_permissions
+    WHERE user_id = $1 AND is_granted = false
+)
+SELECT DISTINCT * FROM (
+    SELECT * FROM user_role_permissions
+    UNION
+    SELECT * FROM user_direct_permissions
+) AS all_permissions
+WHERE id NOT IN (SELECT permission_id FROM user_revoked_permissions);
+```
+
+#### 6.8 User Module Access
+```sql
+-- Get accessible modules for a user based on roles
+SELECT DISTINCT 
+    m.*,
+    rm.can_view,
+    rm.can_create,
+    rm.can_update,
+    rm.can_delete,
+    rm.can_export,
+    rm.custom_permissions
+FROM modules m
+JOIN role_modules rm ON m.id = rm.module_id
+JOIN user_roles ur ON rm.role_id = ur.role_id
+WHERE 
+    ur.user_id = $1 
+    AND ur.is_active = true
+    AND m.is_active = true
+    AND m.is_visible = true
+ORDER BY m.sort_order, m.name;
+```
+
+#### 6.9 Role Hierarchy
+```sql
+-- Get role with all its permissions
+SELECT 
+    r.*,
+    array_agg(
+        json_build_object(
+            'id', p.id,
+            'name', p.name,
+            'module', p.module,
+            'action', p.action
+        )
+    ) as permissions
+FROM roles r
+LEFT JOIN role_permissions rp ON r.id = rp.role_id
+LEFT JOIN permissions p ON rp.permission_id = p.id
+WHERE r.id = $1
+GROUP BY r.id;
+```
+
 ---
 
 ## 7. MIGRATION ORDER
@@ -794,36 +1086,46 @@ ORDER BY available ASC, p.name;
 3. CREATE TABLE brands;
 4. CREATE TABLE categories;
 5. CREATE TABLE settings;
+6. CREATE TABLE roles;
+7. CREATE TABLE permissions;
+8. CREATE TABLE permission_groups;
+9. CREATE TABLE modules;
 
 -- Phase 2: First Level Dependencies
-6. CREATE TABLE customer_addresses;    -- needs users
-7. CREATE TABLE products;               -- needs brands
-8. CREATE TABLE coupons;
+10. CREATE TABLE customer_addresses;    -- needs users
+11. CREATE TABLE user_roles;            -- needs users, roles
+12. CREATE TABLE role_permissions;      -- needs roles, permissions
+13. CREATE TABLE role_modules;          -- needs roles, modules
+14. CREATE TABLE user_permissions;      -- needs users, permissions
+15. CREATE TABLE permission_group_items; -- needs permission_groups, permissions
+16. CREATE TABLE sessions;               -- needs users
+17. CREATE TABLE products;               -- needs brands
+18. CREATE TABLE coupons;
 
 -- Phase 3: Second Level Dependencies
-9. CREATE TABLE product_categories;     -- needs products, categories
-10. CREATE TABLE product_variants;      -- needs products
-11. CREATE TABLE product_images;        -- needs products
-12. CREATE TABLE carts;                 -- needs users
+19. CREATE TABLE product_categories;     -- needs products, categories
+20. CREATE TABLE product_variants;      -- needs products
+21. CREATE TABLE product_images;        -- needs products
+22. CREATE TABLE carts;                 -- needs users
 
 -- Phase 4: Third Level Dependencies
-13. CREATE TABLE cart_items;            -- needs carts, product_variants
-14. CREATE TABLE orders;                -- needs users
-15. CREATE TABLE notifications;         -- needs users
+23. CREATE TABLE cart_items;            -- needs carts, product_variants
+24. CREATE TABLE orders;                -- needs users
+25. CREATE TABLE notifications;         -- needs users
 
 -- Phase 5: Order Dependencies
-16. CREATE TABLE order_items;           -- needs orders, product_variants
-17. CREATE TABLE payments;              -- needs orders
-18. CREATE TABLE payment_logs;          -- needs payments
-19. CREATE TABLE shipments;             -- needs orders
-20. CREATE TABLE shipment_trackings;    -- needs shipments
-21. CREATE TABLE coupon_usages;         -- needs coupons, users, orders
+26. CREATE TABLE order_items;           -- needs orders, product_variants
+27. CREATE TABLE payments;              -- needs orders
+28. CREATE TABLE payment_logs;          -- needs payments
+29. CREATE TABLE shipments;             -- needs orders
+30. CREATE TABLE shipment_trackings;    -- needs shipments
+31. CREATE TABLE coupon_usages;         -- needs coupons, users, orders
 
 -- Phase 6: Logging (can be anytime)
-22. CREATE TABLE activity_logs;
+32. CREATE TABLE activity_logs;
 
 -- Phase 7: Indexes (after all tables)
-23. CREATE all indexes;
+33. CREATE all indexes;
 ```
 
 ### Rollback Sequence
@@ -866,7 +1168,113 @@ DROP TABLE IF EXISTS shipment_trackings CASCADE;
 
 ---
 
-## APPENDIX B: COMMON PITFALLS & SOLUTIONS
+## APPENDIX B: DEFAULT RBAC DATA
+
+### Default Roles
+```sql
+-- System default roles
+INSERT INTO roles (name, display_name, description, is_system, priority) VALUES
+('super_admin', 'Super Administrator', 'Full system access', true, 100),
+('admin', 'Administrator', 'Admin panel access', true, 90),
+('staff', 'Staff', 'Limited admin access', true, 50),
+('customer', 'Customer', 'Customer account', true, 10);
+```
+
+### Default Modules
+```sql
+-- Admin modules
+INSERT INTO modules (name, display_name, icon, route, sort_order) VALUES
+('dashboard', 'Dashboard', 'fa-dashboard', '/admin/dashboard', 1),
+('product_management', 'Products', 'fa-box', '/admin/products', 2),
+('order_management', 'Orders', 'fa-shopping-cart', '/admin/orders', 3),
+('customer_management', 'Customers', 'fa-users', '/admin/customers', 4),
+('marketing', 'Marketing', 'fa-bullhorn', '/admin/marketing', 5),
+('reports', 'Reports', 'fa-chart-bar', '/admin/reports', 6),
+('settings', 'Settings', 'fa-cog', '/admin/settings', 7);
+```
+
+### Default Permissions
+```sql
+-- Product permissions
+INSERT INTO permissions (name, display_name, module, action) VALUES
+('product.view', 'View Products', 'product', 'read'),
+('product.create', 'Create Products', 'product', 'create'),
+('product.update', 'Update Products', 'product', 'update'),
+('product.delete', 'Delete Products', 'product', 'delete'),
+('product.export', 'Export Products', 'product', 'export');
+
+-- Order permissions
+INSERT INTO permissions (name, display_name, module, action) VALUES
+('order.view', 'View Orders', 'order', 'read'),
+('order.update', 'Update Orders', 'order', 'update'),
+('order.delete', 'Delete Orders', 'order', 'delete'),
+('order.export', 'Export Orders', 'order', 'export');
+
+-- Customer permissions
+INSERT INTO permissions (name, display_name, module, action) VALUES
+('customer.view', 'View Customers', 'customer', 'read'),
+('customer.create', 'Create Customers', 'customer', 'create'),
+('customer.update', 'Update Customers', 'customer', 'update'),
+('customer.delete', 'Delete Customers', 'customer', 'delete');
+```
+
+### Role-Permission Assignments
+```sql
+-- Super Admin gets all permissions
+INSERT INTO role_permissions (role_id, permission_id)
+SELECT 
+    (SELECT id FROM roles WHERE name = 'super_admin'),
+    id
+FROM permissions;
+
+-- Admin gets most permissions (except delete)
+INSERT INTO role_permissions (role_id, permission_id)
+SELECT 
+    (SELECT id FROM roles WHERE name = 'admin'),
+    id
+FROM permissions
+WHERE action != 'delete';
+
+-- Staff gets view and update only
+INSERT INTO role_permissions (role_id, permission_id)
+SELECT 
+    (SELECT id FROM roles WHERE name = 'staff'),
+    id
+FROM permissions
+WHERE action IN ('read', 'update');
+```
+
+### Role-Module Access
+```sql
+-- Super Admin has full access to all modules
+INSERT INTO role_modules (role_id, module_id, can_view, can_create, can_update, can_delete, can_export)
+SELECT 
+    (SELECT id FROM roles WHERE name = 'super_admin'),
+    id,
+    true, true, true, true, true
+FROM modules;
+
+-- Admin has full access except delete
+INSERT INTO role_modules (role_id, module_id, can_view, can_create, can_update, can_delete, can_export)
+SELECT 
+    (SELECT id FROM roles WHERE name = 'admin'),
+    id,
+    true, true, true, false, true
+FROM modules;
+
+-- Staff has limited access
+INSERT INTO role_modules (role_id, module_id, can_view, can_create, can_update, can_delete, can_export)
+SELECT 
+    (SELECT id FROM roles WHERE name = 'staff'),
+    id,
+    true, false, true, false, false
+FROM modules
+WHERE name IN ('dashboard', 'product_management', 'order_management');
+```
+
+---
+
+## APPENDIX C: BACKUP & MAINTENANCE
 
 ### Pitfall 1: N+1 Query Problem
 **Problem:** Loading products with images separately  
