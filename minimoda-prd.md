@@ -228,89 +228,286 @@ schemas:
   └── analytics (reporting data)
 ```
 
-### 5.2 Core Tables Structure
+### 5.2 Complete Tables Structure
 
-#### Authentication Schema
+#### Users & Authentication
 ```
-auth.admins
-├── id (UUID PRIMARY KEY)
-├── name (VARCHAR 255)
-├── email (VARCHAR 255 UNIQUE)
-├── password (VARCHAR 255)
-├── role_id (FK)
-├── is_active (BOOLEAN)
-├── last_login (TIMESTAMP)
-├── created_at (TIMESTAMP)
-└── updated_at (TIMESTAMP)
-
-auth.customers
+users
 ├── id (UUID PRIMARY KEY)
 ├── name (VARCHAR 255)
 ├── email (VARCHAR 255 UNIQUE)
 ├── phone (VARCHAR 20)
 ├── password (VARCHAR 255)
+├── role (ENUM: customer, admin, super_admin)
 ├── email_verified_at (TIMESTAMP)
 ├── phone_verified_at (TIMESTAMP)
-├── is_active (BOOLEAN)
+├── last_login_at (TIMESTAMP)
+├── status (ENUM: active, suspended, deleted)
+├── created_at (TIMESTAMP)
+└── updated_at (TIMESTAMP)
+
+customer_addresses
+├── id (UUID PRIMARY KEY)
+├── user_id (FK)
+├── label (VARCHAR 100)
+├── recipient_name (VARCHAR 255)
+├── phone (VARCHAR 20)
+├── province_id (INTEGER)
+├── city_id (INTEGER)
+├── subdistrict_id (INTEGER)
+├── address (TEXT)
+├── postal_code (VARCHAR 10)
+├── coordinates (POINT)
+├── is_default (BOOLEAN)
 ├── created_at (TIMESTAMP)
 └── updated_at (TIMESTAMP)
 ```
 
-#### Product Schema
+#### Product Catalog
 ```
-public.products
+categories
 ├── id (UUID PRIMARY KEY)
-├── sku (VARCHAR 100 UNIQUE)
+├── name (VARCHAR 255)
+├── slug (VARCHAR 255 UNIQUE)
+├── parent_id (FK SELF)
+├── image (VARCHAR 500)
+├── description (TEXT)
+├── sort_order (INTEGER)
+├── is_active (BOOLEAN)
+├── created_at (TIMESTAMP)
+└── updated_at (TIMESTAMP)
+
+brands
+├── id (UUID PRIMARY KEY)
+├── name (VARCHAR 255)
+├── slug (VARCHAR 255 UNIQUE)
+├── logo (VARCHAR 500)
+├── description (TEXT)
+├── is_active (BOOLEAN)
+├── created_at (TIMESTAMP)
+└── updated_at (TIMESTAMP)
+
+products
+├── id (UUID PRIMARY KEY)
 ├── name (VARCHAR 255)
 ├── slug (VARCHAR 255 UNIQUE)
 ├── description (TEXT)
-├── category_id (FK)
-├── attributes (JSONB)
-├── meta_data (JSONB)
-├── is_active (BOOLEAN)
-├── created_by (UUID)
+├── brand_id (FK)
+├── age_min (INTEGER)
+├── age_max (INTEGER)
+├── tags (TEXT[])
+├── status (ENUM: active, inactive, draft)
+├── seo_meta (JSONB)
+├── view_count (INTEGER DEFAULT 0)
+├── is_featured (BOOLEAN DEFAULT FALSE)
 ├── created_at (TIMESTAMP)
 └── updated_at (TIMESTAMP)
 
-public.product_variants
+product_categories
+├── product_id (FK)
+├── category_id (FK)
+└── PRIMARY KEY (product_id, category_id)
+
+product_variants
 ├── id (UUID PRIMARY KEY)
 ├── product_id (FK)
-├── sku_variant (VARCHAR 100)
+├── sku (VARCHAR 100 UNIQUE)
 ├── size (VARCHAR 50)
 ├── color (VARCHAR 50)
-├── price (DECIMAL 12,2)
+├── weight_gram (INTEGER)
+├── price (NUMERIC(12,2))
+├── compare_at_price (NUMERIC(12,2))
 ├── stock_quantity (INTEGER)
-├── reserved_quantity (INTEGER)
-└── attributes (JSONB)
-```
-
-#### Order Schema
-```
-public.orders
-├── id (UUID PRIMARY KEY)
-├── order_number (VARCHAR 50 UNIQUE)
-├── customer_id (FK)
-├── status (VARCHAR 50)
-├── subtotal (DECIMAL 12,2)
-├── shipping_cost (DECIMAL 12,2)
-├── discount_amount (DECIMAL 12,2)
-├── tax_amount (DECIMAL 12,2)
-├── total_amount (DECIMAL 12,2)
-├── payment_method (VARCHAR 50)
-├── payment_status (VARCHAR 50)
-├── shipping_address (JSONB)
-├── notes (TEXT)
+├── barcode (VARCHAR 100)
 ├── created_at (TIMESTAMP)
 └── updated_at (TIMESTAMP)
+
+product_images
+├── id (UUID PRIMARY KEY)
+├── product_id (FK)
+├── url (VARCHAR 500)
+├── alt_text (VARCHAR 255)
+├── is_primary (BOOLEAN DEFAULT FALSE)
+├── sort_order (INTEGER)
+├── created_at (TIMESTAMP)
+└── updated_at (TIMESTAMP)
+```
+
+#### Promotions
+```
+coupons
+├── id (UUID PRIMARY KEY)
+├── code (VARCHAR 50 UNIQUE)
+├── type (ENUM: percentage, amount)
+├── value (NUMERIC(12,2))
+├── min_order_amount (NUMERIC(12,2))
+├── max_discount_amount (NUMERIC(12,2))
+├── max_uses (INTEGER)
+├── per_user_limit (INTEGER)
+├── used_count (INTEGER DEFAULT 0)
+├── applicable_categories (UUID[])
+├── excluded_products (UUID[])
+├── start_at (TIMESTAMP)
+├── end_at (TIMESTAMP)
+├── is_active (BOOLEAN)
+├── created_at (TIMESTAMP)
+└── updated_at (TIMESTAMP)
+
+coupon_usages
+├── id (UUID PRIMARY KEY)
+├── coupon_id (FK)
+├── user_id (FK)
+├── order_id (FK)
+├── discount_amount (NUMERIC(12,2))
+├── used_at (TIMESTAMP)
+```
+
+#### Shopping Cart & Orders
+```
+carts
+├── id (UUID PRIMARY KEY)
+├── user_id (FK NULLABLE)
+├── guest_token (VARCHAR 100)
+├── expires_at (TIMESTAMP)
+├── created_at (TIMESTAMP)
+└── updated_at (TIMESTAMP)
+
+cart_items
+├── id (UUID PRIMARY KEY)
+├── cart_id (FK)
+├── product_variant_id (FK)
+├── quantity (INTEGER)
+├── price_snapshot (NUMERIC(12,2))
+├── created_at (TIMESTAMP)
+└── updated_at (TIMESTAMP)
+
+orders
+├── id (UUID PRIMARY KEY)
+├── order_code (VARCHAR 50 UNIQUE)
+├── user_id (FK NULLABLE)
+├── customer_name (VARCHAR 255)
+├── customer_email (VARCHAR 255)
+├── customer_phone (VARCHAR 20)
+├── subtotal (NUMERIC(12,2))
+├── shipping_cost (NUMERIC(12,2))
+├── discount_total (NUMERIC(12,2))
+├── tax_amount (NUMERIC(12,2))
+├── grand_total (NUMERIC(12,2))
+├── payment_status (ENUM: pending, paid, failed, refunded)
+├── fulfillment_status (ENUM: unfulfilled, processing, packed, shipped, delivered, returned)
+├── courier (VARCHAR 50)
+├── service (VARCHAR 100)
+├── airwaybill (VARCHAR 100)
+├── shipping_address_json (JSONB)
+├── notes (TEXT)
+├── cancelled_at (TIMESTAMP)
+├── cancelled_reason (TEXT)
+├── created_at (TIMESTAMP)
+└── updated_at (TIMESTAMP)
+
+order_items
+├── id (UUID PRIMARY KEY)
+├── order_id (FK)
+├── product_variant_id (FK)
+├── product_name_snapshot (VARCHAR 255)
+├── size (VARCHAR 50)
+├── color (VARCHAR 50)
+├── price (NUMERIC(12,2))
+├── quantity (INTEGER)
+├── weight_gram (INTEGER)
+├── subtotal (NUMERIC(12,2))
+├── created_at (TIMESTAMP)
+└── updated_at (TIMESTAMP)
+```
+
+#### Payments & Shipping
+```
+payments
+├── id (UUID PRIMARY KEY)
+├── order_id (FK)
+├── provider (VARCHAR 50)
+├── transaction_id (VARCHAR 100)
+├── method (VARCHAR 50)
+├── amount (NUMERIC(12,2))
+├── status (ENUM: pending, success, failed, expired, refunded)
+├── raw_payload (JSONB)
+├── paid_at (TIMESTAMP)
+├── created_at (TIMESTAMP)
+└── updated_at (TIMESTAMP)
+
+payment_logs
+├── id (UUID PRIMARY KEY)
+├── payment_id (FK)
+├── event (VARCHAR 100)
+├── data (JSONB)
+├── created_at (TIMESTAMP)
+
+shipments
+├── id (UUID PRIMARY KEY)
+├── order_id (FK)
+├── courier (VARCHAR 50)
+├── service (VARCHAR 100)
+├── cost (NUMERIC(12,2))
+├── etd (VARCHAR 50)
+├── airwaybill (VARCHAR 100)
+├── raw_tracking (JSONB)
+├── shipped_at (TIMESTAMP)
+├── delivered_at (TIMESTAMP)
+├── created_at (TIMESTAMP)
+└── updated_at (TIMESTAMP)
+
+shipment_trackings
+├── id (UUID PRIMARY KEY)
+├── shipment_id (FK)
+├── status (VARCHAR 100)
+├── description (TEXT)
+├── location (VARCHAR 255)
+├── timestamp (TIMESTAMP)
+├── raw_data (JSONB)
+└── created_at (TIMESTAMP)
+```
+
+#### System & Logs
+```
+activity_logs
+├── id (UUID PRIMARY KEY)
+├── actor_type (VARCHAR 50)
+├── actor_id (UUID)
+├── action (VARCHAR 100)
+├── object_type (VARCHAR 50)
+├── object_id (UUID)
+├── meta (JSONB)
+├── ip_address (INET)
+├── user_agent (TEXT)
+├── created_at (TIMESTAMP)
+
+settings
+├── key (VARCHAR 100 PRIMARY KEY)
+├── value (JSONB)
+├── description (TEXT)
+├── updated_at (TIMESTAMP)
+
+notifications
+├── id (UUID PRIMARY KEY)
+├── user_id (FK)
+├── type (VARCHAR 50)
+├── title (VARCHAR 255)
+├── message (TEXT)
+├── data (JSONB)
+├── read_at (TIMESTAMP)
+├── created_at (TIMESTAMP)
 ```
 
 ### 5.3 PostgreSQL Specific Features
 
 - **UUID Primary Keys:** Using gen_random_uuid() for distributed systems
 - **JSONB Columns:** Flexible attributes and metadata storage
+- **Array Types:** Native array support for tags and categories
 - **Full-Text Search:** Using tsvector for product search
 - **Partial Indexes:** Optimizing queries on active records
-- **Table Partitioning:** For orders table by date range
+- **Table Partitioning:** For orders, payments, and activity_logs by date range
+- **GIN Indexes:** For JSONB and array columns
+- **POINT Type:** For geospatial coordinates
 
 ---
 

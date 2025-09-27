@@ -119,32 +119,74 @@ CREATE EXTENSION IF NOT EXISTS "btree_gin";
 
 ```
 migrations/
-├── 2024_01_01_000001_create_admins_table.php
-├── 2024_01_01_000002_create_customers_table.php
-├── 2024_01_01_000003_create_products_table.php
-├── 2024_01_01_000004_create_product_variants_table.php
-├── 2024_01_01_000005_create_categories_table.php
-├── 2024_01_01_000006_create_orders_table.php
-├── 2024_01_01_000007_create_order_items_table.php
-├── 2024_01_01_000008_create_payments_table.php
-├── 2024_01_01_000009_create_shipping_table.php
-└── 2024_01_01_000010_create_carts_table.php
+├── 2024_01_01_000001_create_users_table.php
+├── 2024_01_01_000002_create_customer_addresses_table.php
+├── 2024_01_01_000003_create_categories_table.php
+├── 2024_01_01_000004_create_brands_table.php
+├── 2024_01_01_000005_create_products_table.php
+├── 2024_01_01_000006_create_product_categories_table.php
+├── 2024_01_01_000007_create_product_variants_table.php
+├── 2024_01_01_000008_create_product_images_table.php
+├── 2024_01_01_000009_create_coupons_table.php
+├── 2024_01_01_000010_create_coupon_usages_table.php
+├── 2024_01_01_000011_create_carts_table.php
+├── 2024_01_01_000012_create_cart_items_table.php
+├── 2024_01_01_000013_create_orders_table.php
+├── 2024_01_01_000014_create_order_items_table.php
+├── 2024_01_01_000015_create_payments_table.php
+├── 2024_01_01_000016_create_payment_logs_table.php
+├── 2024_01_01_000017_create_shipments_table.php
+├── 2024_01_01_000018_create_shipment_trackings_table.php
+├── 2024_01_01_000019_create_activity_logs_table.php
+├── 2024_01_01_000020_create_settings_table.php
+└── 2024_01_01_000021_create_notifications_table.php
 ```
 
 ### 2.3 Index Strategy
 
 ```sql
--- Performance Indexes
+-- Performance Indexes for Primary Tables
+-- Products & Categories
 CREATE INDEX idx_products_active ON products(is_active) WHERE is_active = true;
-CREATE INDEX idx_products_category ON products(category_id);
+CREATE INDEX idx_products_brand ON products(brand_id);
+CREATE INDEX idx_products_featured ON products(is_featured) WHERE is_featured = true;
 CREATE INDEX idx_products_search ON products USING gin(to_tsvector('english', name || ' ' || description));
+CREATE INDEX idx_product_categories_product ON product_categories(product_id);
+CREATE INDEX idx_product_categories_category ON product_categories(category_id);
+CREATE INDEX idx_categories_parent ON categories(parent_id);
+CREATE INDEX idx_categories_active ON categories(is_active) WHERE is_active = true;
 
-CREATE INDEX idx_orders_customer ON orders(customer_id);
-CREATE INDEX idx_orders_status ON orders(status) WHERE status NOT IN ('completed', 'cancelled');
-CREATE INDEX idx_orders_date ON orders(created_at DESC);
-
+-- Variants & Images
 CREATE INDEX idx_variants_product ON product_variants(product_id);
+CREATE INDEX idx_variants_sku ON product_variants(sku);
 CREATE INDEX idx_variants_stock ON product_variants(stock_quantity) WHERE stock_quantity > 0;
+CREATE INDEX idx_images_product ON product_images(product_id);
+CREATE INDEX idx_images_primary ON product_images(product_id) WHERE is_primary = true;
+
+-- Orders & Payments
+CREATE INDEX idx_orders_user ON orders(user_id);
+CREATE INDEX idx_orders_status ON orders(payment_status, fulfillment_status);
+CREATE INDEX idx_orders_date ON orders(created_at DESC);
+CREATE INDEX idx_order_items_order ON order_items(order_id);
+CREATE INDEX idx_payments_order ON payments(order_id);
+CREATE INDEX idx_payments_status ON payments(status) WHERE status IN ('pending', 'processing');
+
+-- Cart & Addresses
+CREATE INDEX idx_cart_user ON carts(user_id);
+CREATE INDEX idx_cart_guest ON carts(guest_token);
+CREATE INDEX idx_cart_items_cart ON cart_items(cart_id);
+CREATE INDEX idx_addresses_user ON customer_addresses(user_id);
+CREATE INDEX idx_addresses_default ON customer_addresses(user_id) WHERE is_default = true;
+
+-- Activity & Search
+CREATE INDEX idx_activity_actor ON activity_logs(actor_type, actor_id);
+CREATE INDEX idx_activity_object ON activity_logs(object_type, object_id);
+CREATE INDEX idx_activity_date ON activity_logs(created_at DESC);
+
+-- JSONB Indexes
+CREATE INDEX idx_orders_shipping_address ON orders USING gin(shipping_address_json);
+CREATE INDEX idx_products_seo ON products USING gin(seo_meta);
+CREATE INDEX idx_settings_key ON settings(key);
 ```
 
 ### 2.4 Database Optimization
@@ -193,11 +235,27 @@ backend/
 │   │   ├── Requests/
 │   │   └── Resources/
 │   ├── Models/
-│   │   ├── Admin.php
-│   │   ├── Customer.php
+│   │   ├── User.php
+│   │   ├── CustomerAddress.php
+│   │   ├── Category.php
+│   │   ├── Brand.php
 │   │   ├── Product.php
+│   │   ├── ProductCategory.php
+│   │   ├── ProductVariant.php
+│   │   ├── ProductImage.php
+│   │   ├── Cart.php
+│   │   ├── CartItem.php
 │   │   ├── Order.php
-│   │   └── Payment.php
+│   │   ├── OrderItem.php
+│   │   ├── Payment.php
+│   │   ├── PaymentLog.php
+│   │   ├── Shipment.php
+│   │   ├── ShipmentTracking.php
+│   │   ├── Coupon.php
+│   │   ├── CouponUsage.php
+│   │   ├── ActivityLog.php
+│   │   ├── Setting.php
+│   │   └── Notification.php
 │   ├── Services/
 │   │   ├── PaymentService.php
 │   │   ├── ShippingService.php
