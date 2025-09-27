@@ -150,7 +150,7 @@ The project encompasses:
 
 ## 4. TECHNICAL ARCHITECTURE
 
-### 4.1 System Architecture
+### 4.1 System Architecture (Practical Approach)
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -175,43 +175,50 @@ The project encompasses:
 └─────────────────────────────────────────────────────────┘
 ```
 
-### 4.2 Technology Stack
+### 4.2 Technology Stack (Simplified)
 
 #### Backend Application
 | Component | Technology | Version | Purpose |
 |-----------|------------|---------|----------|
 | Framework | Laravel | 11.x | Core backend framework |
 | Database | PostgreSQL | 16 | Primary data storage |
-| Cache | Redis | 7.x | Session & cache storage |
-| Queue | Laravel Horizon | Latest | Background job processing |
+| Cache | File/Redis | Latest | Session & cache (Redis optional) |
+| Queue | Database | Built-in | Background jobs (simple) |
 | API Auth | Laravel Sanctum | Latest | API authentication |
-| Admin Panel | Filament PHP | 3.x | Admin interface (optional) |
 
 #### Frontend Application
 | Component | Technology | Version | Purpose |
 |-----------|------------|---------|----------|
 | Framework | Laravel | 11.x | Frontend framework |
-| JavaScript | Inertia.js + Vue | 3.x | Interactive components |
-| CSS Framework | Tailwind CSS | 3.x | Styling |
-| Build Tool | Vite | 5.x | Asset bundling |
-| State Management | Pinia | Latest | Frontend state |
+| Template | Blade/Inertia | Latest | View layer |
+| CSS | Tailwind CSS | 3.x | Styling |
+| JavaScript | Alpine/Vue | Latest | Interactivity (minimal) |
 
-### 4.3 Infrastructure Requirements
+### 4.3 Development Approach
+
+**Practical Architecture Principles:**
+- Repository pattern for database abstraction (without interfaces)
+- Service layer only for complex business logic
+- Direct Eloquent usage for simple CRUD
+- Helpers for reusable utilities
+- Constants for status management
+- Laravel's built-in features over custom solutions
+- Progressive enhancement (start simple, refactor when needed)
+
+### 4.4 Infrastructure Requirements
 
 #### Development Environment
-- Docker with Docker Compose
+- Local development with Laravel Valet/Sail
 - PostgreSQL 16
-- Redis 7
-- Node.js 20 LTS
+- Redis (optional)
 - PHP 8.3
 
-#### Production Environment
-- **Server:** VPS with minimum 8GB RAM
+#### Production Environment (Minimal)
+- **Server:** VPS with 4GB RAM minimum
 - **OS:** Ubuntu 22.04 LTS
 - **Web Server:** Nginx
-- **Process Manager:** Supervisor
 - **SSL:** Let's Encrypt
-- **Monitoring:** New Relic / Datadog
+- **Monitoring:** Basic logging
 
 ---
 
@@ -577,81 +584,117 @@ Alternative flows:
 
 ### 7.1 Customer Portal Features
 
-#### F-CP-001: User Registration
+#### F-CP-001: User Registration & Authentication
 **Priority:** High  
-**Description:** Users can register using email or phone number  
+**Description:** Users can register and access their accounts  
 **Acceptance Criteria:**
-- Email/phone validation
-- Password strength requirements
-- Verification process
-- Social login option
+- Email/phone registration with verification
+- Social login option (Google, Facebook)
+- Password reset functionality
+- Guest checkout option
+- Automatic role assignment (customer role)
 
 #### F-CP-002: Product Catalog
 **Priority:** High  
 **Description:** Browse and search products  
 **Acceptance Criteria:**
-- Filter by category, size, color, price
+- Filter by category, size, color, price, brand
 - Sort by relevance, price, newest
 - Product quick view
 - Image zoom functionality
+- Product availability status
 
 #### F-CP-003: Shopping Cart
 **Priority:** High  
 **Description:** Manage shopping cart  
 **Acceptance Criteria:**
 - Add/remove items
-- Update quantities
+- Update quantities with stock validation
 - Apply discount codes
-- Save for later
+- Save cart for logged-in users
+- Guest cart with session storage
 
 #### F-CP-004: Checkout Process
 **Priority:** High  
 **Description:** Complete purchase transaction  
 **Acceptance Criteria:**
 - Guest checkout option
-- Address validation
-- Shipping method selection
-- Payment processing
-- Order confirmation
+- Multiple shipping addresses
+- Real-time shipping calculation
+- Multiple payment methods (Midtrans)
+- Order confirmation with email
 
-### 7.2 Admin Portal Features
+### 7.2 Admin Portal Features (With RBAC)
 
 #### F-AP-001: Dashboard
 **Priority:** High  
 **Description:** Overview of business metrics  
+**Access Control:** All admin roles (view only for staff)  
 **Acceptance Criteria:**
 - Real-time sales data
 - Order statistics
 - Low stock alerts
 - Recent activities
+- Module-based access per role
 
-#### F-AP-002: Product Management
+#### F-AP-002: User & Role Management
+**Priority:** High  
+**Description:** Manage users, roles, and permissions  
+**Access Control:** Super Admin only  
+**Acceptance Criteria:**
+- Create/edit users
+- Assign roles to users
+- Manage role permissions
+- Configure module access
+- Activity audit logs
+
+#### F-AP-003: Product Management
 **Priority:** High  
 **Description:** Complete product lifecycle management  
+**Access Control:** 
+- Super Admin/Admin: Full CRUD
+- Staff: View and Update only
 **Acceptance Criteria:**
-- CRUD operations
-- Bulk import/export
-- Variant management
+- Create/edit/delete products
+- Manage variants (size, color)
+- Bulk import/export (Admin only)
 - Image management
-- SEO metadata
+- Stock tracking
 
-#### F-AP-003: Order Management
+#### F-AP-004: Order Management
 **Priority:** High  
 **Description:** Process and track orders  
+**Access Control:**
+- Super Admin/Admin: Full access
+- Staff: View and Update status only
 **Acceptance Criteria:**
-- Order status updates
+- View order details
+- Update order status
+- Generate invoices
+- Process refunds (Admin only)
 - Shipping label generation
-- Invoice generation
-- Refund processing
 
-#### F-AP-004: Customer Management
+#### F-AP-005: Customer Management
 **Priority:** Medium  
 **Description:** Manage customer accounts  
+**Access Control:** Admin and above  
 **Acceptance Criteria:**
 - View customer details
 - Order history
-- Communication log
 - Account status management
+- Communication log
+
+#### F-AP-006: Reports & Analytics
+**Priority:** Medium  
+**Description:** Business reporting  
+**Access Control:** 
+- Super Admin/Admin: Full reports
+- Staff: Limited reports
+**Acceptance Criteria:**
+- Sales reports
+- Product performance
+- Customer analytics
+- Export functionality (permission-based)
 
 ---
 
@@ -762,67 +805,83 @@ Alternative flows:
 
 ## 10. PROJECT TIMELINE
 
-### 10.1 Development Phases
+### 10.1 Development Phases (Practical Approach)
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│                  PROJECT TIMELINE                     │
+│         PROJECT TIMELINE - 2 FREELANCERS              │
 ├──────────────────────────────────────────────────────┤
 │                                                       │
 │ Phase 0: Setup & Planning          [Week 1-2]       │
 │ ├── Environment setup                                │
-│ ├── Database design                                  │
-│ └── Architecture finalization                        │
+│ ├── Database design with RBAC                        │
+│ └── Basic project structure                          │
 │                                                       │
-│ Phase 1: Core Development          [Week 3-8]       │
-│ ├── Authentication system                            │
-│ ├── Product management                               │
-│ ├── Shopping cart & checkout                         │
-│ └── Admin dashboard                                  │
+│ Phase 1: Authentication & RBAC     [Week 3-4]       │
+│ ├── User authentication                              │
+│ ├── Role & permission setup                          │
+│ └── Basic admin access control                       │
 │                                                       │
-│ Phase 2: Integration               [Week 9-11]      │
-│ ├── Payment gateway                                  │
-│ ├── Shipping services                                │
-│ └── Communication services                           │
+│ Phase 2: Product Management        [Week 5-6]       │
+│ ├── Product CRUD (simple repository)                 │
+│ ├── Categories & variants                            │
+│ └── Image handling                                   │
 │                                                       │
-│ Phase 3: Testing & Optimization   [Week 12-13]      │
-│ ├── Unit & integration testing                       │
+│ Phase 3: Cart & Checkout          [Week 7-8]       │
+│ ├── Shopping cart (service layer)                    │
+│ ├── Checkout flow                                    │
+│ └── Order creation                                   │
+│                                                       │
+│ Phase 4: Payment & Shipping       [Week 9-11]      │
+│ ├── Midtrans integration (service)                   │
+│ ├── RajaOngkir integration                          │
+│ └── Webhook handling                                 │
+│                                                       │
+│ Phase 5: Admin Panel              [Week 12-13]      │
+│ ├── Dashboard                                        │
+│ ├── Order management                                 │
+│ └── Basic reporting                                  │
+│                                                       │
+│ Phase 6: Testing & Launch        [Week 14-16]      │
+│ ├── Critical path testing                            │
 │ ├── Performance optimization                         │
-│ └── Security audit                                   │
-│                                                       │
-│ Phase 4: Deployment               [Week 14]         │
-│ ├── Production setup                                 │
-│ ├── Data migration                                   │
-│ └── Go-live preparation                              │
-│                                                       │
-│ Phase 5: Stabilization           [Week 15-16]       │
-│ ├── Bug fixes                                        │
-│ ├── Performance monitoring                           │
-│ └── User training                                    │
+│ ├── Deployment setup                                 │
+│ └── Go-live support                                  │
 └──────────────────────────────────────────────────────┘
 ```
 
 ### 10.2 Milestones
 
-| Milestone | Date | Deliverable |
-|-----------|------|-------------|
-| M1: Project Kickoff | Week 1 | Setup complete |
-| M2: Alpha Release | Week 8 | Core features ready |
-| M3: Beta Release | Week 11 | Integrations complete |
-| M4: UAT Complete | Week 13 | Testing signoff |
-| M5: Go Live | Week 14 | Production launch |
+| Milestone | Date | Deliverable | Payment |
+|-----------|------|-------------|---------|
+| M1: Project Kickoff | Week 1 | Setup complete, RBAC designed | 20% |
+| M2: Core Features | Week 8 | Products, cart, checkout ready | 25% |
+| M3: Integrations | Week 11 | Payment & shipping working | 25% |
+| M4: Admin Panel | Week 13 | Admin features complete | 20% |
+| M5: Go Live | Week 16 | Production launch | 10% |
 
-### 10.3 Resource Allocation
+### 10.3 Resource Allocation (2 Freelancers)
 
-| Role | Allocation | Duration |
-|------|------------|----------|
-| Project Manager | 50% | 16 weeks |
-| Lead Developer | 100% | 16 weeks |
-| Backend Developer (2) | 100% | 14 weeks |
-| Frontend Developer | 100% | 14 weeks |
-| UI/UX Designer | 50% | 8 weeks |
-| QA Tester | 100% | 6 weeks |
-| DevOps Engineer | 50% | 16 weeks |
+| Role | Allocation | Responsibilities |
+|------|------------|------------------|
+| Freelancer 1 (Backend Lead) | 100% | Database, API, integrations, deployment |
+| Freelancer 2 (Frontend Lead) | 100% | UI/UX, admin panel, frontend API integration |
+
+### 10.4 Task Distribution
+
+**Freelancer 1 (Backend):**
+- Database setup with RBAC
+- API development
+- Repository pattern implementation
+- Payment & shipping integration
+- Server deployment
+
+**Freelancer 2 (Frontend):**
+- Admin panel views
+- API integration
+- Shopping cart UI
+- Checkout flow
+- Responsive design
 
 ---
 

@@ -1,22 +1,24 @@
 # TECHNICAL IMPLEMENTATION GUIDE
 # MINIMODA E-COMMERCE PLATFORM
+## PRACTICAL ARCHITECTURE APPROACH
 
-**Version:** 1.0  
+**Version:** 2.0  
 **Date:** December 2024  
-**Document Type:** Technical Specification  
+**Document Type:** Practical Technical Specification  
+**Approach:** Simplified Architecture for 2-Person Team
 
 ---
 
 ## TABLE OF CONTENTS
 
 1. [Development Environment Setup](#1-development-environment-setup)
-2. [Database Implementation](#2-database-implementation)
-3. [Laravel Project Structure](#3-laravel-project-structure)
+2. [Database Implementation with RBAC](#2-database-implementation-with-rbac)
+3. [Laravel Project Structure (Practical)](#3-laravel-project-structure-practical)
 4. [API Specification](#4-api-specification)
-5. [Security Implementation](#5-security-implementation)
-6. [Testing Strategy](#6-testing-strategy)
+5. [Security & RBAC Implementation](#5-security--rbac-implementation)
+6. [Testing Strategy (Simplified)](#6-testing-strategy-simplified)
 7. [Deployment Guide](#7-deployment-guide)
-8. [Code Standards](#8-code-standards)
+8. [Code Standards (Practical)](#8-code-standards-practical)
 
 ---
 
@@ -24,771 +26,668 @@
 
 ### 1.1 Required Software
 
-| Software | Version | Purpose |
-|----------|---------|---------|
-| PHP | 8.3+ | Runtime environment |
-| Composer | 2.6+ | PHP dependency manager |
-| PostgreSQL | 16 | Database server |
-| Redis | 7+ | Cache and queue |
-| Node.js | 20 LTS | Frontend tooling |
-| Docker | 24+ | Containerization |
-| Git | 2.40+ | Version control |
+| Software | Version | Purpose | Priority |
+|----------|---------|---------|----------|
+| PHP | 8.3+ | Runtime environment | Required |
+| Composer | 2.6+ | PHP dependency manager | Required |
+| PostgreSQL | 16 | Database server | Required |
+| Redis | 7+ | Cache and queue | Required |
+| Node.js | 20 LTS | Frontend tooling | Required |
+| Docker | 24+ | Containerization | Optional |
+| Git | 2.40+ | Version control | Required |
 
-### 1.2 Docker Compose Configuration
+### 1.2 Quick Setup Guide
 
-```yaml
-# docker-compose.yml structure
-services:
-  nginx:
-    image: nginx:alpine
-    ports: 80:80, 443:443
-    volumes: ./nginx.conf
-    
-  php:
-    image: php:8.3-fpm
-    volumes: ./backend
-    
-  postgres:
-    image: postgres:16-alpine
-    environment: DATABASE credentials
-    volumes: ./data/postgres
-    
-  redis:
-    image: redis:7-alpine
-    ports: 6379:6379
-    
-  mailhog:
-    image: mailhog/mailhog
-    ports: 1025:1025, 8025:8025
+```bash
+# 1. Create Laravel project
+composer create-project laravel/laravel minimoda-backend
+
+# 2. Essential packages only
+composer require laravel/sanctum
+composer require intervention/image
+composer require maatwebsite/excel
+
+# 3. Development helpers (optional)
+composer require barryvdh/laravel-debugbar --dev
+composer require barryvdh/laravel-ide-helper --dev
 ```
 
-### 1.3 Local Development Setup Steps
+### 1.3 Environment Configuration
 
-1. **Clone Repositories**
-   - Backend repository (API + Admin)
-   - Frontend repository (Storefront)
+```env
+# .env - Minimal configuration
+APP_NAME="Minimoda"
+APP_ENV=local
+APP_URL=http://localhost:8000
 
-2. **Environment Configuration**
-   - Copy `.env.example` to `.env`
-   - Configure database credentials
-   - Set up API keys (development)
-   - Configure Redis connection
+# PostgreSQL configuration
+DB_CONNECTION=pgsql
+DB_HOST=127.0.0.1
+DB_PORT=5432
+DB_DATABASE=minimoda_db
+DB_USERNAME=postgres
+DB_PASSWORD=password
 
-3. **Database Setup**
-   - Create PostgreSQL database
-   - Run migrations
-   - Execute seeders for test data
-   - Set up database roles
+# Simple cache & session
+CACHE_DRIVER=file
+SESSION_DRIVER=file
+QUEUE_CONNECTION=database
 
-4. **Application Setup**
-   - Install PHP dependencies via Composer
-   - Install Node dependencies via NPM
-   - Generate application key
-   - Create storage symlinks
-   - Configure queue workers
+# Redis (optional for better performance)
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+
+# Payment & Shipping
+MIDTRANS_SERVER_KEY=
+MIDTRANS_IS_PRODUCTION=false
+RAJAONGKIR_API_KEY=
+```
 
 ---
 
-## 2. DATABASE IMPLEMENTATION
+## 2. DATABASE IMPLEMENTATION WITH RBAC
 
-### 2.1 PostgreSQL Configuration
+### 2.1 Database Setup
 
 ```sql
--- Database Configuration
-CREATE DATABASE minimoda_production
-    WITH 
-    OWNER = minimoda_user
-    ENCODING = 'UTF8'
-    LC_COLLATE = 'en_US.UTF-8'
-    LC_CTYPE = 'en_US.UTF-8'
-    TABLESPACE = pg_default
-    CONNECTION LIMIT = 100;
-
--- Create schemas
-CREATE SCHEMA auth;
-CREATE SCHEMA audit;
-CREATE SCHEMA analytics;
-
--- Enable extensions
+-- Create database with UUID support
+CREATE DATABASE minimoda_db;
+\c minimoda_db;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "pg_trgm";
-CREATE EXTENSION IF NOT EXISTS "btree_gin";
 ```
 
-### 2.2 Migration Strategy
+### 2.2 Migration Order (With RBAC)
 
 ```
-migrations/
-├── 2024_01_01_000001_create_users_table.php
-├── 2024_01_01_000002_create_customer_addresses_table.php
-├── 2024_01_01_000003_create_categories_table.php
-├── 2024_01_01_000004_create_brands_table.php
-├── 2024_01_01_000005_create_products_table.php
-├── 2024_01_01_000006_create_product_categories_table.php
-├── 2024_01_01_000007_create_product_variants_table.php
-├── 2024_01_01_000008_create_product_images_table.php
-├── 2024_01_01_000009_create_coupons_table.php
-├── 2024_01_01_000010_create_coupon_usages_table.php
-├── 2024_01_01_000011_create_carts_table.php
-├── 2024_01_01_000012_create_cart_items_table.php
-├── 2024_01_01_000013_create_orders_table.php
-├── 2024_01_01_000014_create_order_items_table.php
-├── 2024_01_01_000015_create_payments_table.php
-├── 2024_01_01_000016_create_payment_logs_table.php
-├── 2024_01_01_000017_create_shipments_table.php
-├── 2024_01_01_000018_create_shipment_trackings_table.php
-├── 2024_01_01_000019_create_activity_logs_table.php
-├── 2024_01_01_000020_create_settings_table.php
-└── 2024_01_01_000021_create_notifications_table.php
+Phase 1: Core Tables
+├── 001_create_users_table
+├── 002_create_roles_table
+├── 003_create_permissions_table
+├── 004_create_modules_table
+├── 005_create_categories_table
+├── 006_create_brands_table
+
+Phase 2: RBAC Relations
+├── 007_create_user_roles_table
+├── 008_create_role_permissions_table
+├── 009_create_role_modules_table
+├── 010_create_user_permissions_table
+
+Phase 3: Business Tables
+├── 011_create_products_table
+├── 012_create_product_variants_table
+├── 013_create_carts_table
+├── 014_create_orders_table
+├── 015_create_payments_table
 ```
 
-### 2.3 Index Strategy
+### 2.3 RBAC Seeder Data
 
-```sql
--- Performance Indexes for Primary Tables
--- Products & Categories
-CREATE INDEX idx_products_active ON products(is_active) WHERE is_active = true;
-CREATE INDEX idx_products_brand ON products(brand_id);
-CREATE INDEX idx_products_featured ON products(is_featured) WHERE is_featured = true;
-CREATE INDEX idx_products_search ON products USING gin(to_tsvector('english', name || ' ' || description));
-CREATE INDEX idx_product_categories_product ON product_categories(product_id);
-CREATE INDEX idx_product_categories_category ON product_categories(category_id);
-CREATE INDEX idx_categories_parent ON categories(parent_id);
-CREATE INDEX idx_categories_active ON categories(is_active) WHERE is_active = true;
+```php
+// database/seeders/RbacSeeder.php
+// Create default roles
+$roles = [
+    ['name' => 'super_admin', 'display_name' => 'Super Administrator'],
+    ['name' => 'admin', 'display_name' => 'Administrator'],
+    ['name' => 'staff', 'display_name' => 'Staff'],
+    ['name' => 'customer', 'display_name' => 'Customer']
+];
 
--- Variants & Images
-CREATE INDEX idx_variants_product ON product_variants(product_id);
-CREATE INDEX idx_variants_sku ON product_variants(sku);
-CREATE INDEX idx_variants_stock ON product_variants(stock_quantity) WHERE stock_quantity > 0;
-CREATE INDEX idx_images_product ON product_images(product_id);
-CREATE INDEX idx_images_primary ON product_images(product_id) WHERE is_primary = true;
+// Create default modules
+$modules = [
+    ['name' => 'dashboard', 'route' => '/admin/dashboard'],
+    ['name' => 'products', 'route' => '/admin/products'],
+    ['name' => 'orders', 'route' => '/admin/orders'],
+    ['name' => 'customers', 'route' => '/admin/customers']
+];
 
--- Orders & Payments
-CREATE INDEX idx_orders_user ON orders(user_id);
-CREATE INDEX idx_orders_status ON orders(payment_status, fulfillment_status);
-CREATE INDEX idx_orders_date ON orders(created_at DESC);
-CREATE INDEX idx_order_items_order ON order_items(order_id);
-CREATE INDEX idx_payments_order ON payments(order_id);
-CREATE INDEX idx_payments_status ON payments(status) WHERE status IN ('pending', 'processing');
-
--- Cart & Addresses
-CREATE INDEX idx_cart_user ON carts(user_id);
-CREATE INDEX idx_cart_guest ON carts(guest_token);
-CREATE INDEX idx_cart_items_cart ON cart_items(cart_id);
-CREATE INDEX idx_addresses_user ON customer_addresses(user_id);
-CREATE INDEX idx_addresses_default ON customer_addresses(user_id) WHERE is_default = true;
-
--- Activity & Search
-CREATE INDEX idx_activity_actor ON activity_logs(actor_type, actor_id);
-CREATE INDEX idx_activity_object ON activity_logs(object_type, object_id);
-CREATE INDEX idx_activity_date ON activity_logs(created_at DESC);
-
--- JSONB Indexes
-CREATE INDEX idx_orders_shipping_address ON orders USING gin(shipping_address_json);
-CREATE INDEX idx_products_seo ON products USING gin(seo_meta);
-CREATE INDEX idx_settings_key ON settings(key);
+// Assign permissions
+// super_admin → all permissions
+// admin → all except delete
+// staff → view and update only
+// customer → no admin access
 ```
-
-### 2.4 Database Optimization
-
-| Optimization | Implementation |
-|--------------|----------------|
-| Connection Pooling | PgBouncer with 100 connections |
-| Query Optimization | EXPLAIN ANALYZE for slow queries |
-| Vacuum Strategy | Daily VACUUM, weekly VACUUM FULL |
-| Partitioning | Orders table by month |
-| Read Replicas | 1 replica for reporting |
-| Backup Strategy | Daily pg_dump, continuous archiving |
 
 ---
 
-## 3. LARAVEL PROJECT STRUCTURE
+## 3. LARAVEL PROJECT STRUCTURE (PRACTICAL)
 
-### 3.1 Backend Project Structure
+### 3.1 Simplified Folder Structure
 
 ```
-backend/
+minimoda-backend/
 ├── app/
-│   ├── Console/
-│   │   └── Commands/
-│   ├── Exceptions/
+│   ├── Constants/          # Simple constants
+│   │   ├── OrderStatus.php
+│   │   └── PaymentStatus.php
+│   │
+│   ├── Helpers/           # Helper functions
+│   │   ├── ApiResponse.php
+│   │   ├── Format.php
+│   │   └── Upload.php
+│   │
 │   ├── Http/
 │   │   ├── Controllers/
-│   │   │   ├── Api/
+│   │   │   ├── Api/       # Customer API
 │   │   │   │   ├── AuthController.php
 │   │   │   │   ├── ProductController.php
 │   │   │   │   ├── CartController.php
-│   │   │   │   ├── OrderController.php
-│   │   │   │   └── PaymentController.php
-│   │   │   ├── Admin/
+│   │   │   │   └── OrderController.php
+│   │   │   ├── Admin/     # Admin panel
 │   │   │   │   ├── DashboardController.php
-│   │   │   │   ├── ProductManagementController.php
-│   │   │   │   ├── OrderManagementController.php
-│   │   │   │   └── ReportController.php
+│   │   │   │   ├── ProductController.php
+│   │   │   │   └── OrderController.php
 │   │   │   └── Webhook/
-│   │   │       ├── MidtransWebhookController.php
-│   │   │       └── ShippingWebhookController.php
+│   │   │       └── MidtransController.php
+│   │   │
 │   │   ├── Middleware/
-│   │   │   ├── AdminAuthenticate.php
-│   │   │   ├── ApiAuthenticate.php
-│   │   │   └── VerifyWebhookSignature.php
-│   │   ├── Requests/
-│   │   └── Resources/
+│   │   │   ├── CheckPermission.php
+│   │   │   └── CheckRole.php
+│   │   │
+│   │   └── Requests/      # Validation
+│   │       └── StoreProductRequest.php
+│   │
 │   ├── Models/
+│   │   ├── Traits/
+│   │   │   └── HasUuid.php
 │   │   ├── User.php
-│   │   ├── CustomerAddress.php
-│   │   ├── Category.php
-│   │   ├── Brand.php
+│   │   ├── Role.php
+│   │   ├── Permission.php
 │   │   ├── Product.php
-│   │   ├── ProductCategory.php
-│   │   ├── ProductVariant.php
-│   │   ├── ProductImage.php
-│   │   ├── Cart.php
-│   │   ├── CartItem.php
-│   │   ├── Order.php
-│   │   ├── OrderItem.php
-│   │   ├── Payment.php
-│   │   ├── PaymentLog.php
-│   │   ├── Shipment.php
-│   │   ├── ShipmentTracking.php
-│   │   ├── Coupon.php
-│   │   ├── CouponUsage.php
-│   │   ├── ActivityLog.php
-│   │   ├── Setting.php
-│   │   └── Notification.php
-│   ├── Services/
-│   │   ├── PaymentService.php
-│   │   ├── ShippingService.php
-│   │   ├── OrderService.php
-│   │   └── NotificationService.php
-│   ├── Repositories/
-│   └── Jobs/
-├── bootstrap/
-├── config/
+│   │   └── Order.php
+│   │
+│   ├── Repositories/      # Simple repositories
+│   │   ├── ProductRepository.php
+│   │   ├── OrderRepository.php
+│   │   └── UserRepository.php
+│   │
+│   └── Services/          # Complex logic only
+│       ├── CartService.php
+│       ├── CheckoutService.php
+│       ├── PaymentService.php
+│       └── RbacService.php
+│
 ├── database/
-├── public/
-├── resources/
+│   ├── migrations/
+│   └── seeders/
+│
 ├── routes/
 │   ├── api.php
 │   ├── admin.php
-│   ├── web.php
-│   └── webhook.php
-├── storage/
-├── tests/
-└── vendor/
+│   └── web.php
+│
+└── config/
+    ├── rbac.php          # RBAC configuration
+    └── minimoda.php      # App configuration
 ```
 
-### 3.2 Frontend Project Structure
+### 3.2 Model Implementation with RBAC
 
-```
-frontend/
-├── app/
-│   ├── Http/
-│   │   ├── Controllers/
-│   │   │   ├── HomeController.php
-│   │   │   ├── ProductController.php
-│   │   │   ├── CartController.php
-│   │   │   └── CheckoutController.php
-│   │   └── Services/
-│   │       └── ApiService.php
-├── resources/
-│   ├── js/
-│   │   ├── Components/
-│   │   ├── Pages/
-│   │   ├── Stores/
-│   │   └── app.js
-│   ├── css/
-│   └── views/
-├── public/
-└── routes/
+```php
+// app/Models/User.php
+class User extends Authenticatable
+{
+    use HasUuid;
+    
+    // RBAC relationships
+    public function roles()
+    {
+        return $this->belongsToMany(Role::class, 'user_roles')
+            ->wherePivot('is_active', true)
+            ->where(function($q) {
+                $q->whereNull('expires_at')
+                  ->orWhere('expires_at', '>', now());
+            });
+    }
+    
+    public function permissions()
+    {
+        // Get permissions through roles
+        return $this->hasManyThrough(Permission::class, Role::class);
+    }
+    
+    public function hasPermission($permission)
+    {
+        return $this->permissions->contains('name', $permission);
+    }
+    
+    public function hasRole($role)
+    {
+        return $this->roles->contains('name', $role);
+    }
+}
 ```
 
-### 3.3 Service Layer Architecture
+### 3.3 Repository Pattern (Simplified)
 
+```php
+// app/Repositories/ProductRepository.php
+class ProductRepository
+{
+    protected $model;
+    
+    public function __construct(Product $model)
+    {
+        $this->model = $model;
+    }
+    
+    public function getActive($perPage = 20)
+    {
+        return $this->model->where('status', 'active')
+            ->with(['brand', 'categories', 'primaryImage'])
+            ->paginate($perPage);
+    }
+    
+    public function findBySlug($slug)
+    {
+        return $this->model->where('slug', $slug)
+            ->with(['variants', 'images'])
+            ->firstOrFail();
+    }
+    
+    // Other simple database queries
+}
 ```
-Services/
-├── Core/
-│   ├── BaseService.php
-│   └── ServiceInterface.php
-├── Payment/
-│   ├── PaymentInterface.php
-│   ├── MidtransService.php
-│   └── PaymentFactory.php
-├── Shipping/
-│   ├── ShippingInterface.php
-│   ├── RajaOngkirService.php
-│   └── ShippingFactory.php
-└── Notification/
-    ├── EmailService.php
-    ├── WhatsAppService.php
-    └── NotificationManager.php
+
+### 3.4 Service Layer (Only Complex Logic)
+
+```php
+// app/Services/CheckoutService.php
+class CheckoutService
+{
+    protected $orderRepo;
+    protected $paymentService;
+    
+    public function process($cart, $data)
+    {
+        DB::beginTransaction();
+        try {
+            // 1. Create order
+            $order = $this->createOrder($cart, $data);
+            
+            // 2. Process payment
+            $payment = $this->paymentService->create($order);
+            
+            // 3. Clear cart
+            $cart->items()->delete();
+            
+            DB::commit();
+            
+            // 4. Send notifications
+            event(new OrderCreated($order));
+            
+            return $order;
+        } catch (\Exception $e) {
+            DB::rollback();
+            throw $e;
+        }
+    }
+}
 ```
 
 ---
 
 ## 4. API SPECIFICATION
 
-### 4.1 API Endpoint Structure
+### 4.1 Customer API Endpoints
 
 ```
-BASE URL: https://api.minimoda.com/v1
+BASE URL: https://api.minimoda.com/api
 
-Authentication:
-- Bearer Token (Laravel Sanctum)
-- Rate Limiting: 60 requests/minute
+Authentication: Bearer Token (Sanctum)
 
-Response Format:
+Auth:
+POST   /auth/register
+POST   /auth/login
+POST   /auth/logout
+
+Products:
+GET    /products
+GET    /products/{slug}
+GET    /categories
+
+Cart:
+GET    /cart
+POST   /cart/add
+PUT    /cart/items/{id}
+DELETE /cart/items/{id}
+
+Checkout:
+POST   /checkout
+POST   /shipping/calculate
+
+Orders:
+GET    /orders
+GET    /orders/{code}
+```
+
+### 4.2 Admin API Endpoints
+
+```
+BASE URL: https://admin.minimoda.com/admin
+
+Auth: Session-based with CSRF
+
+Dashboard:
+GET    /dashboard
+
+Products:
+GET    /products
+POST   /products
+PUT    /products/{id}
+DELETE /products/{id}
+
+Orders:
+GET    /orders
+GET    /orders/{id}
+PUT    /orders/{id}/status
+
+Users & RBAC:
+GET    /users
+GET    /roles
+POST   /users/{id}/roles
+GET    /permissions
+```
+
+---
+
+## 5. SECURITY & RBAC IMPLEMENTATION
+
+### 5.1 Middleware for Permission Check
+
+```php
+// app/Http/Middleware/CheckPermission.php
+class CheckPermission
 {
-    "success": boolean,
-    "data": object|array,
-    "message": string,
-    "errors": object (if any),
-    "meta": {
-        "pagination": object (if paginated)
+    public function handle($request, Closure $next, $permission)
+    {
+        if (!auth()->user()->hasPermission($permission)) {
+            abort(403, 'Unauthorized');
+        }
+        return $next($request);
+    }
+}
+
+// Usage in routes
+Route::post('/products', [ProductController::class, 'store'])
+    ->middleware('permission:product.create');
+```
+
+### 5.2 Role-Based Menu Display
+
+```php
+// app/Services/RbacService.php
+class RbacService
+{
+    public function getUserModules($userId)
+    {
+        return Module::join('role_modules', 'modules.id', '=', 'role_modules.module_id')
+            ->join('user_roles', 'role_modules.role_id', '=', 'user_roles.role_id')
+            ->where('user_roles.user_id', $userId)
+            ->where('user_roles.is_active', true)
+            ->where('modules.is_active', true)
+            ->where('modules.is_visible', true)
+            ->where('role_modules.can_view', true)
+            ->orderBy('modules.sort_order')
+            ->select('modules.*', 'role_modules.can_create', 
+                     'role_modules.can_update', 'role_modules.can_delete')
+            ->distinct()
+            ->get();
     }
 }
 ```
 
-### 4.2 Core API Endpoints
+### 5.3 Security Best Practices
 
-#### Authentication Endpoints
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | /auth/register | Customer registration |
-| POST | /auth/login | Customer login |
-| POST | /auth/logout | Logout |
-| POST | /auth/refresh | Refresh token |
-| POST | /auth/forgot-password | Password reset request |
-| POST | /auth/verify-email | Email verification |
-
-#### Product Endpoints
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | /products | List products (paginated) |
-| GET | /products/{slug} | Product details |
-| GET | /products/search | Search products |
-| GET | /categories | List categories |
-| GET | /categories/{slug}/products | Products by category |
-
-#### Cart Endpoints
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | /cart | Get cart items |
-| POST | /cart/add | Add item to cart |
-| PUT | /cart/{id} | Update cart item |
-| DELETE | /cart/{id} | Remove from cart |
-| POST | /cart/apply-coupon | Apply discount code |
-
-#### Order Endpoints
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | /orders | Customer orders |
-| GET | /orders/{id} | Order details |
-| POST | /orders/create | Create order |
-| POST | /orders/{id}/cancel | Cancel order |
-| GET | /orders/{id}/track | Track order |
-
-#### Shipping Endpoints
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | /shipping/calculate | Calculate shipping cost |
-| GET | /shipping/provinces | List provinces |
-| GET | /shipping/cities/{province} | List cities |
-| POST | /shipping/track | Track shipment |
-
-### 4.3 Admin API Endpoints
-
-```
-BASE URL: https://admin.minimoda.com/api
-
-Authentication:
-- Session-based with CSRF token
-- Role-based permissions
-```
-
-#### Dashboard Endpoints
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | /dashboard/stats | Dashboard statistics |
-| GET | /dashboard/recent-orders | Recent orders |
-| GET | /dashboard/low-stock | Low stock alerts |
-
-#### Product Management
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | /products | List products (admin view) |
-| POST | /products | Create product |
-| PUT | /products/{id} | Update product |
-| DELETE | /products/{id} | Delete product |
-| POST | /products/import | Bulk import |
-| GET | /products/export | Export products |
+| Security Measure | Implementation | Priority |
+|-----------------|----------------|----------|
+| Password Hashing | bcrypt (Laravel default) | Required |
+| CSRF Protection | Laravel middleware | Required |
+| SQL Injection | Eloquent ORM | Required |
+| XSS Prevention | Blade escaping | Required |
+| Rate Limiting | throttle:60,1 | Required |
+| 2FA | Optional for admin | Nice to have |
+| API Authentication | Sanctum tokens | Required |
+| Session Security | Secure cookies | Required |
 
 ---
 
-## 5. SECURITY IMPLEMENTATION
+## 6. TESTING STRATEGY (SIMPLIFIED)
 
-### 5.1 Authentication Security
+### 6.1 Priority Testing Areas
+
+```
+Critical Paths Only:
+├── Authentication (login/register)
+├── Cart operations
+├── Checkout process
+├── Payment webhook
+└── RBAC permissions
+```
+
+### 6.2 Simple Test Examples
 
 ```php
-// Multi-guard configuration
-'guards' => [
-    'web' => [
-        'driver' => 'session',
-        'provider' => 'admins',
-    ],
-    'api' => [
-        'driver' => 'sanctum',
-        'provider' => 'customers',
-    ],
-]
+// tests/Feature/AuthTest.php
+class AuthTest extends TestCase
+{
+    public function test_user_can_login()
+    {
+        $user = User::factory()->create();
+        
+        $response = $this->postJson('/api/auth/login', [
+            'email' => $user->email,
+            'password' => 'password'
+        ]);
+        
+        $response->assertStatus(200)
+                 ->assertJsonStructure(['token']);
+    }
+}
 
-// Password policies
-- Minimum 8 characters
-- Must contain uppercase, lowercase, number
-- Password history (last 5 passwords)
-- Force change every 90 days (admin)
+// tests/Feature/RbacTest.php
+class RbacTest extends TestCase
+{
+    public function test_admin_can_create_product()
+    {
+        $admin = User::factory()->create();
+        $admin->roles()->attach(Role::where('name', 'admin')->first());
+        
+        $response = $this->actingAs($admin)
+            ->post('/admin/products', [...]);
+            
+        $response->assertStatus(201);
+    }
+}
 ```
-
-### 5.2 API Security Measures
-
-| Security Layer | Implementation |
-|----------------|----------------|
-| Rate Limiting | 60 requests/minute per IP |
-| CORS | Whitelist specific domains |
-| API Versioning | Maintain backward compatibility |
-| Input Validation | Form requests with sanitization |
-| SQL Injection | Parameterized queries, Eloquent ORM |
-| XSS Prevention | Output escaping, CSP headers |
-| CSRF Protection | Token validation for state-changing |
-
-### 5.3 Payment Security
-
-```
-PCI DSS Compliance Checklist:
-□ No credit card storage in database
-□ Use tokenization from payment gateway
-□ SSL/TLS for all transactions
-□ Regular security scans
-□ Access control and logging
-□ Secure development practices
-□ Network segmentation
-□ Regular security training
-```
-
-### 5.4 Data Encryption
-
-```php
-// Sensitive data encryption
-- Customer PII: AES-256 encryption
-- API Keys: Encrypted in database
-- Passwords: bcrypt with cost factor 12
-- Sessions: Encrypted cookies
-- Database: Encryption at rest (PostgreSQL TDE)
-```
-
----
-
-## 6. TESTING STRATEGY
-
-### 6.1 Test Coverage Requirements
-
-| Test Type | Coverage Target | Tools |
-|-----------|-----------------|-------|
-| Unit Tests | 80% | PHPUnit |
-| Integration Tests | 70% | PHPUnit |
-| API Tests | 100% | Postman/Newman |
-| Frontend Tests | 60% | Jest/Vue Test Utils |
-| E2E Tests | Critical paths | Laravel Dusk |
-
-### 6.2 Test Structure
-
-```
-tests/
-├── Unit/
-│   ├── Models/
-│   ├── Services/
-│   └── Helpers/
-├── Feature/
-│   ├── Api/
-│   │   ├── AuthenticationTest.php
-│   │   ├── ProductTest.php
-│   │   ├── CartTest.php
-│   │   └── OrderTest.php
-│   ├── Admin/
-│   └── Webhook/
-├── Browser/ (Dusk)
-│   ├── CustomerFlowTest.php
-│   └── AdminFlowTest.php
-└── TestCase.php
-```
-
-### 6.3 Test Data Management
-
-```php
-// Factory pattern for test data
-database/factories/
-├── CustomerFactory.php
-├── ProductFactory.php
-├── OrderFactory.php
-└── PaymentFactory.php
-
-// Seeders for development
-database/seeders/
-├── DatabaseSeeder.php
-├── ProductSeeder.php
-├── CustomerSeeder.php
-└── TestOrderSeeder.php
-```
-
-### 6.4 Performance Testing
-
-| Test Scenario | Target | Tool |
-|---------------|--------|------|
-| Homepage load | < 2s | Lighthouse |
-| API response | < 500ms | JMeter |
-| Checkout flow | < 5s | K6 |
-| Concurrent users | 10,000 | LoadRunner |
-| Database queries | < 100ms | Query profiler |
 
 ---
 
 ## 7. DEPLOYMENT GUIDE
 
-### 7.1 Server Requirements
-
-#### Production Server Specifications
-```
-Minimum Requirements:
-- CPU: 4 cores
-- RAM: 8GB
-- Storage: 100GB SSD
-- Bandwidth: 1TB/month
-- OS: Ubuntu 22.04 LTS
-
-Recommended:
-- CPU: 8 cores
-- RAM: 16GB
-- Storage: 500GB SSD
-- Bandwidth: Unlimited
-- Load Balancer: Yes
-```
-
-### 7.2 Deployment Process
+### 7.1 Simple VPS Deployment
 
 ```bash
-# Deployment Steps
+# Server Requirements (Minimum)
+- Ubuntu 22.04 LTS
+- 2 CPU, 4GB RAM
+- 40GB SSD
 
-1. Pre-deployment
-   - Backup current database
-   - Put application in maintenance mode
-   - Clear all caches
-
-2. Code Deployment
-   - Pull latest code from git
-   - Install/update dependencies
-   - Run database migrations
-   - Update environment variables
-
-3. Asset Compilation
-   - Compile frontend assets
-   - Optimize images
-   - Generate manifest files
-
-4. Cache Warming
-   - Cache configuration
-   - Cache routes
-   - Cache views
-   - Prime Redis cache
-
-5. Post-deployment
-   - Run health checks
-   - Verify integrations
-   - Monitor error logs
-   - Remove maintenance mode
+# Software Stack
+- Nginx
+- PHP 8.3 FPM
+- PostgreSQL 16
+- Redis (optional)
+- Supervisor for queues
 ```
 
-### 7.3 CI/CD Pipeline
+### 7.2 Deployment Steps
 
-```yaml
-# .gitlab-ci.yml structure
-stages:
-  - test
-  - build
-  - deploy
+```bash
+# 1. Clone repository
+git clone https://github.com/your-repo/minimoda-backend.git
 
-test:
-  script:
-    - Run PHPUnit tests
-    - Run code quality checks
-    - Security vulnerability scan
+# 2. Install dependencies
+composer install --no-dev --optimize-autoloader
+npm install && npm run build
 
-build:
-  script:
-    - Build Docker images
-    - Compile assets
-    - Create artifacts
+# 3. Environment setup
+cp .env.production .env
+php artisan key:generate
 
-deploy_staging:
-  script:
-    - Deploy to staging
-    - Run smoke tests
+# 4. Database setup
+php artisan migrate --force
+php artisan db:seed --class=RbacSeeder
+
+# 5. Permissions
+chmod -R 775 storage bootstrap/cache
+chown -R www-data:www-data .
+
+# 6. Optimize
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
+```
+
+### 7.3 Nginx Configuration
+
+```nginx
+server {
+    listen 80;
+    server_name api.minimoda.com;
+    root /var/www/minimoda-backend/public;
     
-deploy_production:
-  script:
-    - Deploy to production
-    - Run health checks
-    - Notify team
+    index index.php;
+    
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+    
+    location ~ \.php$ {
+        fastcgi_pass unix:/var/run/php/php8.3-fpm.sock;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+        include fastcgi_params;
+    }
+}
 ```
-
-### 7.4 Monitoring Setup
-
-| Component | Tool | Metrics |
-|-----------|------|---------|
-| Application | New Relic | Response time, errors |
-| Server | Datadog | CPU, memory, disk |
-| Database | pg_stat | Query performance |
-| Uptime | UptimeRobot | Availability |
-| Logs | ELK Stack | Centralized logging |
-| Security | Fail2ban | Attack prevention |
 
 ---
 
-## 8. CODE STANDARDS
+## 8. CODE STANDARDS (PRACTICAL)
 
-### 8.1 PHP/Laravel Standards
+### 8.1 Simplified Standards
 
 ```php
-// Follow PSR-12 coding standard
-// Use Laravel best practices
+// Follow these simple rules:
 
-Naming Conventions:
-- Classes: PascalCase
-- Methods: camelCase
-- Variables: camelCase
-- Constants: UPPER_SNAKE_CASE
-- Database: snake_case
+1. Use meaningful names
+   - Good: $productRepository->getActiveProducts()
+   - Bad: $repo->get()
 
-File Organization:
-- One class per file
-- Namespace matches directory
-- Use type hints
-- Document with PHPDoc
+2. Keep controllers thin
+   - Business logic in services
+   - Database queries in repositories
+
+3. Use Laravel conventions
+   - Resource controllers
+   - Form requests for validation
+   - Eloquent relationships
+
+4. Comment complex logic
+   // Calculate discount based on user role
+   if ($user->hasRole('vip')) {
+       $discount = $price * 0.2;
+   }
+
+5. Use constants for statuses
+   OrderStatus::PENDING instead of 'pending'
 ```
 
-### 8.2 Frontend Standards
-
-```javascript
-// Vue.js Style Guide compliance
-// ESLint configuration
-
-Component Structure:
-- Single File Components
-- Props validation
-- Emit documentation
-- Scoped styling
-
-State Management:
-- Pinia for global state
-- Component state for local
-- Avoid prop drilling
-```
-
-### 8.3 Git Workflow
+### 8.2 File Naming
 
 ```
-Branch Strategy:
+Models:         Product.php (singular)
+Controllers:    ProductController.php
+Repositories:   ProductRepository.php
+Services:       CheckoutService.php
+Migrations:     2024_01_01_create_products_table.php
+```
+
+### 8.3 Git Workflow (Simple)
+
+```bash
 main (production)
-├── develop (staging)
-    ├── feature/feature-name
-    ├── bugfix/bug-description
-    └── hotfix/critical-fix
+├── develop (testing)
+    ├── feature/add-payment
+    └── fix/cart-bug
 
-Commit Messages:
-feat: Add new feature
-fix: Bug fix
-docs: Documentation
-style: Formatting
-refactor: Code restructuring
-test: Add tests
-chore: Maintenance
-```
-
-### 8.4 Documentation Standards
-
-```markdown
-Required Documentation:
-1. README.md - Project overview
-2. INSTALLATION.md - Setup guide
-3. API.md - API documentation
-4. DEPLOYMENT.md - Deployment guide
-5. CONTRIBUTING.md - Contribution guide
-
-Code Documentation:
-- PHPDoc for all public methods
-- Inline comments for complex logic
-- TODO comments with ticket reference
+# Commit messages
+feat: Add payment gateway
+fix: Fix cart calculation
+docs: Update README
 ```
 
 ---
 
-## APPENDIX A: PACKAGE DEPENDENCIES
+## APPENDIX A: COMMON COMMANDS
 
-### Laravel Packages
-```json
-{
-    "laravel/framework": "^11.0",
-    "laravel/sanctum": "^3.3",
-    "laravel/horizon": "^5.21",
-    "laravel/telescope": "^4.17",
-    "spatie/laravel-permission": "^6.0",
-    "maatwebsite/excel": "^3.1",
-    "intervention/image": "^2.7",
-    "barryvdh/laravel-debugbar": "^3.9"
-}
+### Development
+```bash
+# Start server
+php artisan serve
+
+# Create controller
+php artisan make:controller Admin/ProductController --resource
+
+# Create model with migration
+php artisan make:model Product -m
+
+# Run migrations
+php artisan migrate
+
+# Seed database
+php artisan db:seed
+
+# Clear cache
+php artisan cache:clear
+php artisan config:clear
+
+# Run tests
+php artisan test
 ```
 
-### NPM Packages
-```json
-{
-    "vue": "^3.3",
-    "@inertiajs/vue3": "^1.0",
-    "axios": "^1.6",
-    "pinia": "^2.1",
-    "vite": "^5.0",
-    "tailwindcss": "^3.3"
-}
+### RBAC Management
+```bash
+# Create role
+php artisan tinker
+>>> Role::create(['name' => 'manager', 'display_name' => 'Manager']);
+
+# Assign role to user
+>>> $user = User::find(1);
+>>> $user->roles()->attach(Role::where('name', 'admin')->first());
+
+# Check permissions
+>>> $user->hasPermission('product.create'); // true/false
 ```
 
 ---
 
-## APPENDIX B: ERROR CODES
+## APPENDIX B: TROUBLESHOOTING
 
-| Code | Description | HTTP Status |
-|------|-------------|------------|
-| 1001 | Invalid credentials | 401 |
-| 1002 | Token expired | 401 |
-| 1003 | Insufficient permissions | 403 |
-| 2001 | Product not found | 404 |
-| 2002 | Out of stock | 400 |
-| 3001 | Invalid payment | 400 |
-| 3002 | Payment failed | 402 |
-| 4001 | Shipping calculation error | 500 |
-| 5001 | Order not found | 404 |
+### Common Issues
 
----
-
-## APPENDIX C: PERFORMANCE BENCHMARKS
-
-| Operation | Target | Acceptable | Critical |
-|-----------|--------|------------|----------|
-| Page Load | < 1s | < 2s | > 3s |
-| API Response | < 200ms | < 500ms | > 1s |
-| Database Query | < 50ms | < 100ms | > 200ms |
-| Image Load | < 500ms | < 1s | > 2s |
-| Search Results | < 300ms | < 600ms | > 1s |
+| Issue | Solution |
+|-------|----------|
+| Permission denied | Run: chmod -R 775 storage |
+| Database connection | Check .env DB credentials |
+| 419 error | CSRF token missing |
+| 500 error | Check storage/logs/laravel.log |
+| Slow queries | Add indexes, check EXPLAIN |
+| RBAC not working | Clear cache, check middleware |
 
 ---
 
 **END OF TECHNICAL GUIDE**
 
-© 2024 Minimoda Technical Team
+*This practical approach balances clean code with development speed, perfect for a 2-person team*
